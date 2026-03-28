@@ -1,0 +1,260 @@
+import type { Server, Socket } from 'socket.io'
+import type {
+  ClientToServerEvents,
+  InterServerEvents,
+  ServerToClientEvents,
+  SocketAck,
+  SocketData,
+} from '../../../shared/socketProtocol'
+import { ServerError } from '../errors/ServerError'
+import { LobbyService } from '../services/lobbyService'
+
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>
+type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>
+
+function ackOk<T>(ack: ((response: SocketAck<T>) => void) | undefined, data?: T): void {
+  if (!ack) return
+  ack({ ok: true, data })
+}
+
+function ackError<T>(ack: ((response: SocketAck<T>) => void) | undefined, code: string, message: string): void {
+  if (!ack) return
+  ack({
+    ok: false,
+    error: {
+      code: code as never,
+      message,
+    },
+  })
+}
+
+function resolveError(err: unknown): { code: string; message: string } {
+  if (err instanceof ServerError) {
+    return {
+      code: err.code,
+      message: err.message,
+    }
+  }
+
+  return {
+    code: 'INTERNAL_ERROR',
+    message: 'Unexpected server error.',
+  }
+}
+
+export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyService: LobbyService): void {
+  socket.on('lobby:create', (payload, ack) => {
+    try {
+      const created = lobbyService.createLobby(payload, socket.id)
+      socket.data.lobbyId = created.lobby.id
+      socket.data.playerId = created.playerId
+      socket.join(created.lobby.id)
+
+      io.to(created.lobby.id).emit('lobby:updated', created.lobby)
+      io.to(created.lobby.id).emit('game:state', {
+        lobbyId: created.lobby.id,
+        game: lobbyService.getGameState(created.lobby.id),
+      })
+
+      ackOk(ack, created)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('lobby:join', (payload, ack) => {
+    try {
+      const joined = lobbyService.joinLobby(payload, socket.id)
+      socket.data.lobbyId = joined.lobby.id
+      socket.data.playerId = joined.playerId
+      socket.join(joined.lobby.id)
+
+      io.to(joined.lobby.id).emit('lobby:updated', joined.lobby)
+      io.to(joined.lobby.id).emit('game:state', {
+        lobbyId: joined.lobby.id,
+        game: lobbyService.getGameState(joined.lobby.id),
+      })
+
+      ackOk(ack, joined)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('lobby:leave', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      const lobbyId = payload.lobbyId.trim().toUpperCase()
+      const snapshot = lobbyService.leaveLobby(lobbyId, playerId)
+
+      socket.leave(lobbyId)
+      socket.data.playerId = undefined
+      socket.data.lobbyId = undefined
+
+      if (snapshot) {
+        io.to(lobbyId).emit('lobby:updated', snapshot)
+        io.to(lobbyId).emit('game:state', {
+          lobbyId,
+          game: lobbyService.getGameState(lobbyId),
+        })
+      }
+
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('player:ready', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      const lobbyId = payload.lobbyId.trim().toUpperCase()
+      const snapshot = lobbyService.toggleReady(lobbyId, playerId, payload.isReady)
+      io.to(lobbyId).emit('lobby:updated', snapshot)
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('game:start', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      const lobbyId = payload.lobbyId.trim().toUpperCase()
+      const startingSnapshot = lobbyService.startGame(lobbyId, playerId)
+
+      io.to(lobbyId).emit('lobby:updated', startingSnapshot)
+      io.to(lobbyId).emit('game:phaseChanged', {
+        lobbyId,
+        phase: 'ROLE_ASSIGNMENT',
+        roundIndex: startingSnapshot.game.roundIndex,
+      })
+      io.to(lobbyId).emit('game:state', {
+        lobbyId,
+        game: lobbyService.getGameState(lobbyId),
+      })
+
+      setTimeout(() => {
+        try {
+          const codingSnapshot = lobbyService.transitionToCoding(lobbyId)
+          io.to(lobbyId).emit('lobby:updated', codingSnapshot)
+          io.to(lobbyId).emit('game:phaseChanged', {
+            lobbyId,
+            phase: 'CODING',
+            roundIndex: codingSnapshot.game.roundIndex,
+          })
+          io.to(lobbyId).emit('game:state', {
+            lobbyId,
+            game: lobbyService.getGameState(lobbyId),
+          })
+        } catch {
+          // Lobby can disappear before delayed transition; safe to ignore.
+        }
+      }, 1200)
+
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('code:submit', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      lobbyService.submitCode(payload, playerId)
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('vote:cast', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      const voteState = lobbyService.castVote(payload, playerId)
+      io.to(payload.lobbyId.trim().toUpperCase()).emit('game:voteResult', {
+        lobbyId: payload.lobbyId.trim().toUpperCase(),
+        votes: voteState.votes,
+        tally: voteState.tally,
+      })
+
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('chat:send', (payload, ack) => {
+    try {
+      const playerId = socket.data.playerId
+      if (!playerId) {
+        throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
+      }
+
+      const lobbyId = payload.lobbyId.trim().toUpperCase()
+      const chat = lobbyService.sendChat(payload, playerId)
+
+      io.to(lobbyId).emit('chat:message', {
+        lobbyId,
+        playerId,
+        playerName: chat.playerName,
+        text: chat.text,
+        timestamp: chat.timestamp,
+      })
+
+      ackOk(ack)
+    } catch (err) {
+      const resolved = resolveError(err)
+      socket.emit('error', resolved as never)
+      ackError(ack, resolved.code, resolved.message)
+    }
+  })
+
+  socket.on('disconnect', () => {
+    const snapshot = lobbyService.handleDisconnect(socket.id)
+    const lobbyId = socket.data.lobbyId
+    if (!snapshot || !lobbyId) {
+      return
+    }
+
+    io.to(lobbyId).emit('lobby:updated', snapshot)
+    io.to(lobbyId).emit('game:state', {
+      lobbyId,
+      game: lobbyService.getGameState(lobbyId),
+    })
+  })
+}

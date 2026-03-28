@@ -1,0 +1,20 @@
+*.md
+!README.md
+/.claude/*
+
+# dependencies
+node_modules/
+
+# frontend build output
+web/.next/
+web/tsconfig.tsbuildinfo
+
+# backend build output
+server/dist/
+
+# logs
+*.log
+
+# env files
+.env
+.env.*
