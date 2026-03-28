@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useGameStore } from '../store/gameStore'
 import { createLobbySession, joinLobbySession } from '../lib/socketClient'
+import { bootstrapPresentationLobby } from '../lib/mockEvents'
 import { setLobbySession } from '../lib/lobbySession'
+import { isPresentationMode } from '../lib/presentationMode'
 
 function generateLobbyId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -28,6 +30,28 @@ export default function LandingPage() {
   const [joinCode, setJoinCode] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [presentationModeActive, setPresentationModeActive] = useState(false)
+
+  useEffect(() => {
+    setPresentationModeActive(isPresentationMode())
+  }, [])
+
+  function handleLaunchPresentation() {
+    const playerName = createName.trim() || joinName.trim() || 'Presenter_0x01'
+    const result = bootstrapPresentationLobby({
+      lobbyId: 'DEMO42',
+      playerName,
+      walletAddress: address?.toLowerCase(),
+    })
+
+    setLobbySession({
+      lobbyId: result.lobby.id,
+      playerId: result.playerId,
+      playerName,
+      walletAddress: address?.toLowerCase(),
+    })
+    router.push(`/lobby/${result.lobby.id}?demo=1`)
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -203,6 +227,23 @@ export default function LandingPage() {
               {pending ? 'PENDING...' : 'JOIN_LOBBY()'}
             </button>
           </form>
+        </div>
+
+        <div className="mt-6 w-full max-w-2xl border border-cyan/40 bg-cyan/5 p-4">
+          <div className="font-mono text-xs text-cyan mb-3">{'// hackathon_presentation_mode'}</div>
+          <div className="font-mono text-[11px] text-text-muted mb-3">
+            Instantly boots a 4-player mock match with phase controls. Ideal for a 3-minute live demo.
+          </div>
+          <button
+            type="button"
+            onClick={handleLaunchPresentation}
+            className="border border-cyan text-cyan font-mono text-sm py-2.5 px-4 hover:bg-cyan/10 transition-all active:scale-[0.98]"
+          >
+            LAUNCH_PRESENTATION_MODE()
+          </button>
+          {presentationModeActive && (
+            <div className="font-mono text-[10px] text-cyan mt-2">presentation mode is active for this browser session</div>
+          )}
         </div>
 
         {error && (

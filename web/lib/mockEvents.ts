@@ -1,4 +1,5 @@
-import { useGameStore, Phase, Player } from '../store/gameStore'
+import { useGameStore, Phase, Player, Role } from '../store/gameStore'
+import type { GameSnapshot, LobbySnapshot } from './socketClient'
 
 export const mockPlayers: Player[] = [
   { id: 'p1', name: 'nullptr_exception', isHost: true, isEliminated: false, isReady: true },
@@ -6,6 +7,16 @@ export const mockPlayers: Player[] = [
   { id: 'p3', name: 'segfault_sam', isHost: false, isEliminated: false, isReady: false },
   { id: 'p4', name: 'root_0xff', isHost: false, isEliminated: false, isReady: true },
 ]
+
+const PHASE_TIMERS: Record<Phase, number> = {
+  LOBBY: 0,
+  ROLE_ASSIGNMENT: 5,
+  CODING: 300,
+  MEETING: 120,
+  SHUFFLE: 5,
+  VOTE_RESOLVE: 45,
+  END_GAME: 0,
+}
 
 const PHASE_ORDER: Phase[] = [
   'LOBBY',
@@ -19,17 +30,39 @@ const PHASE_ORDER: Phase[] = [
 
 export function simulatePhase(phase: Phase) {
   const store = useGameStore.getState()
-  store.setPhase(phase)
+  store.applyGameSnapshot({
+    phase,
+    roundIndex: store.game.roundIndex,
+    totalTimeLeft: Math.max(0, store.game.totalTimeLeft),
+    phaseTimeLeft: PHASE_TIMERS[phase],
+    startedAt: Date.now(),
+  })
 
   switch (phase) {
     case 'ROLE_ASSIGNMENT':
       store.addEvent('Roles assigned. One among you is the Imposter.', 'warn')
-      store.setPlayers(
-        mockPlayers.map((p, i) => ({
+      {
+        const currentPlayers = store.lobby.players.length > 0 ? store.lobby.players : mockPlayers
+        const imposterIndex = currentPlayers.findIndex((p) => p.id !== store.player.id)
+        const pickedImposterIndex = imposterIndex >= 0 ? imposterIndex : 0
+
+        const playersWithRoles = currentPlayers.map((p, i) => {
+          const role: Role = i === pickedImposterIndex ? 'IMPOSTER' : 'CREWMATE'
+          return {
           ...p,
-          role: i === 1 ? 'IMPOSTER' : 'CREWMATE',
+            role,
+          }
+        })
+
+        const myRole = playersWithRoles.find((p) => p.id === store.player.id)?.role ?? 'CREWMATE'
+        store.setPlayers(playersWithRoles)
+        useGameStore.setState((s) => ({
+          player: {
+            ...s.player,
+            role: myRole,
+          },
         }))
-      )
+      }
       break
     case 'CODING':
       store.addEvent('// CODING phase started. 5:00 on the clock.', 'success')
@@ -93,4 +126,99 @@ export function initMockLobby(lobbyId: string) {
   store.setLobbyId(lobbyId)
   store.setPlayers(mockPlayers)
   store.addEvent(`Joined lobby ${lobbyId.toUpperCase()}`, 'success')
+}
+
+export function createPresentationLobbySnapshot(input: {
+  lobbyId: string
+  playerName: string
+  walletAddress?: string
+  minPlayers?: number
+}): { lobby: LobbySnapshot; playerId: string } {
+  const normalizedLobbyId = input.lobbyId.trim().toUpperCase()
+  const playerId = 'demo-you'
+  const minPlayers = input.minPlayers ?? 4
+  const now = Date.now()
+
+  const demoPlayers = [
+    {
+      id: playerId,
+      name: input.playerName,
+      walletAddress: input.walletAddress,
+      isHost: true,
+      isReady: true,
+      isEliminated: false,
+      isConnected: true,
+    },
+    {
+      id: 'demo-p2',
+      name: 'x0r_cipher',
+      walletAddress: undefined,
+      isHost: false,
+      isReady: true,
+      isEliminated: false,
+      isConnected: true,
+    },
+    {
+      id: 'demo-p3',
+      name: 'segfault_sam',
+      walletAddress: undefined,
+      isHost: false,
+      isReady: true,
+      isEliminated: false,
+      isConnected: true,
+    },
+    {
+      id: 'demo-p4',
+      name: 'root_0xff',
+      walletAddress: undefined,
+      isHost: false,
+      isReady: true,
+      isEliminated: false,
+      isConnected: true,
+    },
+  ]
+
+  const game: GameSnapshot = {
+    phase: 'LOBBY',
+    roundIndex: 0,
+    totalTimeLeft: 420,
+    phaseTimeLeft: 0,
+    startedAt: null,
+  }
+
+  return {
+    playerId,
+    lobby: {
+      id: normalizedLobbyId,
+      minPlayers,
+      status: 'waiting',
+      players: demoPlayers,
+      game,
+      createdAt: now,
+      updatedAt: now,
+    },
+  }
+}
+
+export function bootstrapPresentationLobby(input: {
+  lobbyId: string
+  playerName: string
+  walletAddress?: string
+  minPlayers?: number
+}): { lobby: LobbySnapshot; playerId: string } {
+  const result = createPresentationLobbySnapshot(input)
+  const store = useGameStore.getState()
+
+  store.setPlayerId(result.playerId)
+  store.setPlayerName(input.playerName)
+  if (input.walletAddress) {
+    store.setPlayerWallet(input.walletAddress)
+  }
+  store.applyLobbySnapshot(result.lobby)
+  store.applyGameSnapshot(result.lobby.game)
+  store.setConnectionState('connected')
+  store.resetVoteState()
+  store.addEvent('presentation_mode: mock lobby bootstrapped', 'success')
+
+  return result
 }

@@ -10,6 +10,8 @@ import PlayerRoster from '../../../components/PlayerRoster'
 import EventFeed from '../../../components/EventFeed'
 import WalletConnectButton from '../../../components/WalletConnectButton'
 import ConnectionBadge from '../../../components/ConnectionBadge'
+import PresentationModeControls from '../../../components/PresentationModeControls'
+import RoleRevealOverlay from '../../../components/RoleRevealOverlay'
 import { reconnectGameSocket } from '../../../lib/socketClient'
 import { useLobbySocketSync } from '../../../lib/useLobbySocketSync'
 
@@ -44,6 +46,9 @@ export default function GamePage({ params }: { params: { lobbyId: string } }) {
           <WalletConnectButton />
         </div>
       </header>
+
+      <PresentationModeControls lobbyId={lobbyId} />
+      <RoleRevealOverlay />
 
       {/* Phase banner */}
       <PhaseBanner />

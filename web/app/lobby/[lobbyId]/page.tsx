@@ -9,7 +9,10 @@ import WalletConnectButton from '../../../components/WalletConnectButton'
 import EventFeed from '../../../components/EventFeed'
 import StakeMatchPanel from '../../../components/StakeMatchPanel'
 import ConnectionBadge from '../../../components/ConnectionBadge'
+import PresentationModeControls from '../../../components/PresentationModeControls'
 import { reconnectGameSocket, requestGameStart } from '../../../lib/socketClient'
+import { simulatePhase } from '../../../lib/mockEvents'
+import { isPresentationMode } from '../../../lib/presentationMode'
 import { useLobbySocketSync } from '../../../lib/useLobbySocketSync'
 
 export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
@@ -28,6 +31,13 @@ export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
   async function handleStartGame() {
     setStartPending(true)
     try {
+      if (isPresentationMode()) {
+        simulatePhase('ROLE_ASSIGNMENT')
+        simulatePhase('CODING')
+        router.push(`/game/${lobbyId}?demo=1`)
+        return
+      }
+
       await requestGameStart(lobbyId)
       router.push(`/game/${lobbyId}`)
     } catch (err) {
@@ -52,6 +62,8 @@ export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
           <WalletConnectButton />
         </div>
       </header>
+
+      <PresentationModeControls lobbyId={lobbyId} />
 
       <div className="flex-1 grid md:grid-cols-[1fr_280px] gap-0 overflow-hidden">
         {/* Main — lobby panel */}

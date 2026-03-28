@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 import { useAccount } from 'wagmi'
 import { getGameSocket, joinLobbySession, type LobbySnapshot, type SocketErrorPayload } from './socketClient'
+import { bootstrapPresentationLobby } from './mockEvents'
+import { isPresentationMode } from './presentationMode'
 import { useGameStore } from '../store/gameStore'
 import { getLobbySession, setLobbySession } from './lobbySession'
 
@@ -16,6 +18,28 @@ export function useLobbySocketSync(lobbyId: string) {
   useEffect(() => {
     const normalizedLobbyId = normalizeLobbyId(lobbyId)
     if (!normalizedLobbyId) {
+      return
+    }
+
+    if (isPresentationMode()) {
+      const state = useGameStore.getState()
+      const currentLobbyId = normalizeLobbyId(state.lobby.id)
+      const walletAddress = address?.toLowerCase()
+
+      if (walletAddress) {
+        state.setPlayerWallet(walletAddress)
+      }
+
+      if (currentLobbyId !== normalizedLobbyId || state.lobby.players.length === 0) {
+        bootstrapPresentationLobby({
+          lobbyId: normalizedLobbyId,
+          playerName: state.player.name || 'Presenter_0x01',
+          walletAddress,
+        })
+      } else {
+        state.setConnectionState('connected')
+      }
+
       return
     }
 

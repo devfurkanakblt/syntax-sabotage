@@ -122,12 +122,33 @@ body::after {
   50% { box-shadow: 0 0 14px #00ff88, 0 0 28px #00ff8870; }
 }
 
+@keyframes role-reveal-enter {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes role-reveal-scan {
+  0% { transform: translateY(0); opacity: 0.15; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(260px); opacity: 0.15; }
+}
+
+@keyframes role-reveal-flicker {
+  0%, 100% { opacity: 1; }
+  35% { opacity: 0.88; }
+  50% { opacity: 0.72; }
+  70% { opacity: 0.92; }
+}
+
 .animate-scanline { animation: scanline 8s linear infinite; }
 .animate-pulse-red { animation: pulse-red 1s ease-in-out infinite; }
 .animate-fade-in { animation: fade-in 0.4s ease forwards; }
 .animate-slide-down { animation: slide-down 0.3s ease forwards; }
 .animate-flicker { animation: flicker 0.4s ease-in-out infinite; }
 .animate-glow-green { animation: glow-green 2s ease-in-out infinite; }
+.role-reveal-enter { animation: role-reveal-enter 280ms ease-out forwards; }
+.role-reveal-scan { animation: role-reveal-scan 1.25s ease-in-out infinite; }
+.role-reveal-flicker { animation: role-reveal-flicker 1.15s ease-in-out infinite; }
 
 /* Staggered fade-in for landing page children */
 .stagger > *:nth-child(1) { animation: fade-in 0.5s 0.05s ease both; }

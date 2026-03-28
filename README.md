@@ -13,6 +13,17 @@ This repository now contains:
 2. `npm install`
 3. `npm run dev`
 
+## 3-Minute Hackathon Presentation Mode
+
+Use this when you need to demo the full game loop quickly without waiting on real multiplayer timing.
+
+1. Set `NEXT_PUBLIC_PRESENTATION_MODE=true` in your `web/.env.local` (or open the app once with `?demo=1` in the URL).
+2. Start frontend with `cd web && npm run dev`.
+3. On the landing page, click `LAUNCH_PRESENTATION_MODE()`.
+4. Use the `presentation_mode` controls in lobby/game pages to jump phases instantly.
+
+Presentation mode uses in-browser mock state and bypasses live Socket.IO calls.
+
 ## Run Backend
 
 1. `cd server`
