@@ -11,7 +11,7 @@ import type { LobbySnapshot } from '../../../shared/gameTypes'
 import { ServerError } from '../errors/ServerError'
 import { toLobbySnapshot, type LobbyState } from '../state/types'
 import { generateLobbyId } from '../utils/id'
-import { GameService } from './gameService'
+import { GameService, type GameTickOutcome, type VoteResolution } from './gameService'
 import { PlayerService } from './playerService'
 
 const DISCONNECT_GRACE_MS = Number(process.env.DISCONNECT_GRACE_MS ?? 30000)
@@ -57,6 +57,8 @@ export class LobbyService {
       },
       codeByPlayer: {},
       votes: {},
+      shuffleHistory: [],
+      eliminationHistory: [],
       createdAt: now,
       updatedAt: now,
       disconnectTimers: new Map(),
@@ -193,13 +195,14 @@ export class LobbyService {
     return toLobbySnapshot(lobby)
   }
 
-  public transitionToCoding(lobbyId: string): LobbySnapshot {
+  public tickLobby(lobbyId: string): { snapshot: LobbySnapshot; tick: GameTickOutcome } {
     const lobby = this.requireLobby(lobbyId)
-    if (lobby.game.phase !== 'ROLE_ASSIGNMENT') {
-      throw new ServerError('INVALID_PHASE', 'Lobby is not in role assignment phase.')
+    const tick = this.gameService.tick(lobby)
+    lobby.updatedAt = Date.now()
+    return {
+      snapshot: toLobbySnapshot(lobby),
+      tick,
     }
-    this.gameService.transitionToCoding(lobby)
-    return toLobbySnapshot(lobby)
   }
 
   public submitCode(payload: CodeSubmitRequest, playerId: string): void {
@@ -217,10 +220,10 @@ export class LobbyService {
     lobby.updatedAt = Date.now()
   }
 
-  public castVote(payload: VoteCastRequest, playerId: string): { votes: Record<string, string>; tally: Record<string, number> } {
+  public castVote(payload: VoteCastRequest, playerId: string): VoteResolution {
     const lobby = this.requireLobby(payload.lobbyId)
-    if (lobby.game.phase !== 'VOTE_RESOLVE') {
-      throw new ServerError('INVALID_PHASE', 'Voting is only allowed during vote resolve phase.')
+    if (lobby.game.phase !== 'MEETING' && lobby.game.phase !== 'VOTE_RESOLVE') {
+      throw new ServerError('INVALID_PHASE', 'Voting is only allowed during meeting and vote phases.')
     }
 
     const voter = lobby.players.get(playerId)
@@ -231,16 +234,19 @@ export class LobbyService {
     if (voter.isEliminated) {
       throw new ServerError('UNAUTHORIZED', 'Eliminated players cannot vote.')
     }
-
-    lobby.votes[playerId] = payload.targetPlayerId
-    lobby.updatedAt = Date.now()
-
-    const tally: Record<string, number> = {}
-    for (const votedPlayerId of Object.values(lobby.votes)) {
-      tally[votedPlayerId] = (tally[votedPlayerId] ?? 0) + 1
+    if (target.isEliminated) {
+      throw new ServerError('UNAUTHORIZED', 'Cannot vote for eliminated players.')
+    }
+    if (target.id === voter.id) {
+      throw new ServerError('SELF_VOTE_FORBIDDEN', 'You cannot vote for yourself.')
+    }
+    if (lobby.votes[playerId]) {
+      throw new ServerError('ALREADY_VOTED', 'One vote per round is allowed.')
     }
 
-    return { votes: { ...lobby.votes }, tally }
+    const vote = this.gameService.castVote(lobby, voter.id, target.id)
+    lobby.updatedAt = Date.now()
+    return vote
   }
 
   public sendChat(payload: ChatSendRequest, playerId: string): { playerName: string; timestamp: number; text: string } {
@@ -265,6 +271,11 @@ export class LobbyService {
 
   public getPlayerIdBySocket(socketId: string): string | null {
     return this.socketSessions.get(socketId)?.playerId ?? null
+  }
+
+  public hasLobby(lobbyId: string): boolean {
+    const normalized = lobbyId.trim().toUpperCase()
+    return this.lobbies.has(normalized)
   }
 
   private requireLobby(lobbyId: string): LobbyState {

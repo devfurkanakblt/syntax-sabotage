@@ -12,6 +12,96 @@ import { LobbyService } from '../services/lobbyService'
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>
 
+const lobbyTickers = new Map<string, NodeJS.Timeout>()
+
+function normalizeLobbyId(lobbyId: string): string {
+  return lobbyId.trim().toUpperCase()
+}
+
+function stopLobbyTicker(lobbyId: string): void {
+  const timer = lobbyTickers.get(lobbyId)
+  if (!timer) {
+    return
+  }
+  clearInterval(timer)
+  lobbyTickers.delete(lobbyId)
+}
+
+function startLobbyTicker(io: TypedServer, lobbyService: LobbyService, lobbyId: string): void {
+  if (lobbyTickers.has(lobbyId)) {
+    return
+  }
+
+  const timer = setInterval(() => {
+    if (!lobbyService.hasLobby(lobbyId)) {
+      stopLobbyTicker(lobbyId)
+      return
+    }
+
+    try {
+      const { snapshot, tick } = lobbyService.tickLobby(lobbyId)
+
+      io.to(lobbyId).emit('game:timerTick', {
+        lobbyId,
+        phaseTimeLeft: tick.timerTick.phaseTimeLeft,
+        totalTimeLeft: tick.timerTick.totalTimeLeft,
+      })
+
+      io.to(lobbyId).emit('game:state', {
+        lobbyId,
+        game: snapshot.game,
+      })
+
+      if (tick.phaseChanged) {
+        io.to(lobbyId).emit('game:phaseChanged', {
+          lobbyId,
+          phase: tick.phaseChanged.phase,
+          roundIndex: tick.phaseChanged.roundIndex,
+        })
+      }
+
+      if (tick.codeAssigned) {
+        io.to(lobbyId).emit('game:codeAssigned', {
+          lobbyId,
+          assignments: tick.codeAssigned.assignments,
+        })
+      }
+
+      if (tick.voteResolution) {
+        io.to(lobbyId).emit('game:voteResult', {
+          lobbyId,
+          votes: tick.voteResolution.votes,
+          tally: tick.voteResolution.tally,
+        })
+      }
+
+      if (tick.playerEliminated) {
+        io.to(lobbyId).emit('game:playerEliminated', {
+          lobbyId,
+          playerId: tick.playerEliminated.playerId,
+        })
+      }
+
+      if (tick.phaseChanged || tick.codeAssigned || tick.voteResolution || tick.playerEliminated || tick.ended) {
+        io.to(lobbyId).emit('lobby:updated', snapshot)
+      }
+
+      if (tick.ended) {
+        io.to(lobbyId).emit('game:ended', {
+          lobbyId,
+          winner: tick.ended.winner,
+          reason: tick.ended.reason,
+        })
+        stopLobbyTicker(lobbyId)
+      }
+    } catch {
+      stopLobbyTicker(lobbyId)
+    }
+  }, 1000)
+
+  lobbyTickers.set(lobbyId, timer)
+}
+
 function ackOk<T>(ack: ((response: SocketAck<T>) => void) | undefined, data?: T): void {
   if (!ack) return
   ack({ ok: true, data })
@@ -77,6 +167,10 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
         game: lobbyService.getGameState(joined.lobby.id),
       })
 
+      if (joined.lobby.status !== 'waiting' && joined.lobby.game.phase !== 'END_GAME') {
+        startLobbyTicker(io, lobbyService, joined.lobby.id)
+      }
+
       ackOk(ack, joined)
     } catch (err) {
       const resolved = resolveError(err)
@@ -105,6 +199,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
           lobbyId,
           game: lobbyService.getGameState(lobbyId),
         })
+      } else {
+        stopLobbyTicker(lobbyId)
       }
 
       ackOk(ack)
@@ -154,23 +250,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
         game: lobbyService.getGameState(lobbyId),
       })
 
-      setTimeout(() => {
-        try {
-          const codingSnapshot = lobbyService.transitionToCoding(lobbyId)
-          io.to(lobbyId).emit('lobby:updated', codingSnapshot)
-          io.to(lobbyId).emit('game:phaseChanged', {
-            lobbyId,
-            phase: 'CODING',
-            roundIndex: codingSnapshot.game.roundIndex,
-          })
-          io.to(lobbyId).emit('game:state', {
-            lobbyId,
-            game: lobbyService.getGameState(lobbyId),
-          })
-        } catch {
-          // Lobby can disappear before delayed transition; safe to ignore.
-        }
-      }, 1200)
+      startLobbyTicker(io, lobbyService, lobbyId)
 
       ackOk(ack)
     } catch (err) {
@@ -203,9 +283,10 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
         throw new ServerError('UNAUTHORIZED', 'No active player session for this socket.')
       }
 
+      const lobbyId = normalizeLobbyId(payload.lobbyId)
       const voteState = lobbyService.castVote(payload, playerId)
-      io.to(payload.lobbyId.trim().toUpperCase()).emit('game:voteResult', {
-        lobbyId: payload.lobbyId.trim().toUpperCase(),
+      io.to(lobbyId).emit('game:voteResult', {
+        lobbyId,
         votes: voteState.votes,
         tally: voteState.tally,
       })
@@ -248,6 +329,9 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
     const snapshot = lobbyService.handleDisconnect(socket.id)
     const lobbyId = socket.data.lobbyId
     if (!snapshot || !lobbyId) {
+      if (lobbyId) {
+        stopLobbyTicker(lobbyId)
+      }
       return
     }
 
@@ -256,5 +340,9 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
       lobbyId,
       game: lobbyService.getGameState(lobbyId),
     })
+
+    if (snapshot.players.length === 0) {
+      stopLobbyTicker(lobbyId)
+    }
   })
 }

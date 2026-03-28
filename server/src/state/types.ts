@@ -12,6 +12,19 @@ export interface PlayerSession {
   joinedAt: number
 }
 
+export interface ShuffleRecord {
+  roundIndex: number
+  assignments: Record<string, string>
+  timestamp: number
+}
+
+export interface EliminationRecord {
+  roundIndex: number
+  playerId: string
+  votes: number
+  timestamp: number
+}
+
 export interface LobbyState {
   id: string
   minPlayers: number
@@ -21,6 +34,8 @@ export interface LobbyState {
   game: GameSnapshot
   codeByPlayer: Record<string, string>
   votes: Record<string, string>
+  shuffleHistory: ShuffleRecord[]
+  eliminationHistory: EliminationRecord[]
   createdAt: number
   updatedAt: number
   disconnectTimers: Map<string, NodeJS.Timeout>
