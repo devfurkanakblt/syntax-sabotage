@@ -3,6 +3,7 @@ import type { GameSnapshot, LobbySnapshot, LobbyStatus, PublicPlayer, Role } fro
 export interface PlayerSession {
   id: string
   name: string
+  walletAddress: string | null
   isHost: boolean
   isReady: boolean
   isEliminated: boolean
@@ -36,6 +37,11 @@ export interface LobbyState {
   votes: Record<string, string>
   shuffleHistory: ShuffleRecord[]
   eliminationHistory: EliminationRecord[]
+  payout: {
+    status: 'idle' | 'processing' | 'confirmed' | 'failed'
+    txHash: string | null
+    detail: string | null
+  }
   createdAt: number
   updatedAt: number
   disconnectTimers: Map<string, NodeJS.Timeout>
@@ -45,6 +51,7 @@ export function toPublicPlayer(player: PlayerSession): PublicPlayer {
   return {
     id: player.id,
     name: player.name,
+    walletAddress: player.walletAddress ?? undefined,
     isHost: player.isHost,
     isReady: player.isReady,
     isEliminated: player.isEliminated,

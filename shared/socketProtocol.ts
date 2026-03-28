@@ -6,6 +6,8 @@ export type ErrorCode =
   | 'ALREADY_IN_LOBBY'
   | 'ALREADY_VOTED'
   | 'SELF_VOTE_FORBIDDEN'
+  | 'STAKE_NOT_VERIFIED'
+  | 'STAKE_CONFIG_ERROR'
   | 'GAME_ALREADY_STARTED'
   | 'NOT_HOST'
   | 'MIN_PLAYERS_NOT_MET'
@@ -29,6 +31,7 @@ export interface SocketAck<T = void> {
 export interface LobbyCreateRequest {
   lobbyId?: string
   playerName: string
+  walletAddress?: string
   minPlayers?: number
 }
 
@@ -40,6 +43,7 @@ export interface LobbyCreateResponse {
 export interface LobbyJoinRequest {
   lobbyId: string
   playerName: string
+  walletAddress?: string
   playerId?: string
 }
 
@@ -105,6 +109,13 @@ export interface GameEndedPayload {
   reason: string
 }
 
+export interface GamePayoutStatusPayload {
+  lobbyId: string
+  status: 'skipped' | 'mock-settled' | 'submitted' | 'confirmed' | 'failed'
+  txHash?: string
+  detail: string
+}
+
 export interface ChatMessagePayload {
   lobbyId: string
   playerId: string
@@ -133,6 +144,7 @@ export interface ServerToClientEvents {
   'game:voteResult': (payload: VoteResultPayload) => void
   'game:playerEliminated': (payload: PlayerEliminatedPayload) => void
   'game:ended': (payload: GameEndedPayload) => void
+  'game:payoutStatus': (payload: GamePayoutStatusPayload) => void
   'chat:message': (payload: ChatMessagePayload) => void
   error: (payload: SocketErrorPayload) => void
 }

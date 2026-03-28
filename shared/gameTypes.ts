@@ -14,6 +14,7 @@ export type LobbyStatus = 'waiting' | 'starting' | 'active' | 'ended'
 export interface PublicPlayer {
   id: string
   name: string
+  walletAddress?: string
   isHost: boolean
   isReady: boolean
   isEliminated: boolean

@@ -5,6 +5,7 @@ interface CreatePlayerInput {
   name: string
   socketId: string
   isHost: boolean
+  walletAddress?: string
   id?: string
 }
 
@@ -14,11 +15,25 @@ export class PlayerService {
     return trimmed.length > 0 ? trimmed.slice(0, 24) : 'Anon_0x00'
   }
 
+  public normalizeWalletAddress(raw?: string): string | null {
+    if (!raw) {
+      return null
+    }
+
+    const candidate = raw.trim()
+    if (!/^0x[a-fA-F0-9]{40}$/.test(candidate)) {
+      return null
+    }
+
+    return candidate.toLowerCase()
+  }
+
   public createPlayer(input: CreatePlayerInput): PlayerSession {
     const now = Date.now()
     return {
       id: input.id ?? generatePlayerId(),
       name: this.normalizeName(input.name),
+      walletAddress: this.normalizeWalletAddress(input.walletAddress),
       isHost: input.isHost,
       isReady: false,
       isEliminated: false,
@@ -29,10 +44,16 @@ export class PlayerService {
     }
   }
 
-  public attachSocket(player: PlayerSession, socketId: string, name?: string): PlayerSession {
+  public attachSocket(player: PlayerSession, socketId: string, name?: string, walletAddress?: string): PlayerSession {
     if (name && name.trim().length > 0) {
       player.name = this.normalizeName(name)
     }
+
+    const normalizedWallet = this.normalizeWalletAddress(walletAddress)
+    if (normalizedWallet) {
+      player.walletAddress = normalizedWallet
+    }
+
     player.socketId = socketId
     player.isConnected = true
     return player

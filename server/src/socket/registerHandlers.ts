@@ -92,6 +92,24 @@ function startLobbyTicker(io: TypedServer, lobbyService: LobbyService, lobbyId: 
           winner: tick.ended.winner,
           reason: tick.ended.reason,
         })
+
+        void lobbyService.finalizePayout(lobbyId, tick.ended.winner)
+          .then((payout) => {
+            io.to(lobbyId).emit('game:payoutStatus', {
+              lobbyId,
+              status: payout.status,
+              txHash: payout.txHash,
+              detail: payout.detail,
+            })
+          })
+          .catch((error) => {
+            io.to(lobbyId).emit('game:payoutStatus', {
+              lobbyId,
+              status: 'failed',
+              detail: `payout finalize error: ${String(error)}`,
+            })
+          })
+
         stopLobbyTicker(lobbyId)
       }
     } catch {
@@ -229,7 +247,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
     }
   })
 
-  socket.on('game:start', (payload, ack) => {
+  socket.on('game:start', async (payload, ack) => {
     try {
       const playerId = socket.data.playerId
       if (!playerId) {
@@ -237,7 +255,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, lobbyServ
       }
 
       const lobbyId = payload.lobbyId.trim().toUpperCase()
-      const startingSnapshot = lobbyService.startGame(lobbyId, playerId)
+      const startingSnapshot = await lobbyService.startGame(lobbyId, playerId)
 
       io.to(lobbyId).emit('lobby:updated', startingSnapshot)
       io.to(lobbyId).emit('game:phaseChanged', {

@@ -8,11 +8,12 @@ import LobbyPanel from '../../../components/LobbyPanel'
 import PlayerRoster from '../../../components/PlayerRoster'
 import WalletConnectButton from '../../../components/WalletConnectButton'
 import EventFeed from '../../../components/EventFeed'
+import StakeMatchPanel from '../../../components/StakeMatchPanel'
 
 export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
   const { lobbyId } = params
   const router = useRouter()
-  const { lobby, setLobbyId } = useGameStore()
+  const { lobby, player, setLobbyId } = useGameStore()
 
   useEffect(() => {
     if (lobby.id !== lobbyId) {
@@ -49,6 +50,8 @@ export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
           </div>
 
           <LobbyPanel />
+
+          <StakeMatchPanel lobbyId={lobbyId} isHost={player.isHost} />
 
           <div className="border border-dashed border-border p-4 font-mono text-xs text-text-muted space-y-1">
             <div>{'// game_rules:'}</div>

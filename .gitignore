@@ -12,9 +12,18 @@ web/tsconfig.tsbuildinfo
 # backend build output
 server/dist/
 
+# contracts build output
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
 # logs
 *.log
 
 # env files
 .env
 .env.*
+!.env.example
+!web/.env.example
+!server/.env.example
+!contracts/.env.example

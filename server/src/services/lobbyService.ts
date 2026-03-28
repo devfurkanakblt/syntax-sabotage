@@ -13,6 +13,7 @@ import { toLobbySnapshot, type LobbyState } from '../state/types'
 import { generateLobbyId } from '../utils/id'
 import { GameService, type GameTickOutcome, type VoteResolution } from './gameService'
 import { PlayerService } from './playerService'
+import { StakeService, type PayoutResult } from './stakeService'
 
 const DISCONNECT_GRACE_MS = Number(process.env.DISCONNECT_GRACE_MS ?? 30000)
 
@@ -26,6 +27,7 @@ export class LobbyService {
   private readonly socketSessions = new Map<string, SocketSession>()
   private readonly playerService = new PlayerService()
   private readonly gameService = new GameService()
+  private readonly stakeService = new StakeService()
 
   public createLobby(payload: LobbyCreateRequest, socketId: string): LobbyCreateResponse {
     const requestedId = payload.lobbyId?.trim().toUpperCase()
@@ -39,6 +41,7 @@ export class LobbyService {
       name: payload.playerName,
       socketId,
       isHost: true,
+      walletAddress: payload.walletAddress,
     })
 
     const now = Date.now()
@@ -59,6 +62,11 @@ export class LobbyService {
       votes: {},
       shuffleHistory: [],
       eliminationHistory: [],
+      payout: {
+        status: 'idle',
+        txHash: null,
+        detail: null,
+      },
       createdAt: now,
       updatedAt: now,
       disconnectTimers: new Map(),
@@ -80,7 +88,7 @@ export class LobbyService {
       const reconnecting = lobby.players.get(payload.playerId)
       if (reconnecting) {
         this.clearDisconnectTimer(lobby, reconnecting.id)
-        this.playerService.attachSocket(reconnecting, socketId, payload.playerName)
+        this.playerService.attachSocket(reconnecting, socketId, payload.playerName, payload.walletAddress)
         lobby.updatedAt = Date.now()
 
         this.socketSessions.set(socketId, { lobbyId: lobby.id, playerId: reconnecting.id })
@@ -101,6 +109,7 @@ export class LobbyService {
       name: payload.playerName,
       socketId,
       isHost: false,
+      walletAddress: payload.walletAddress,
     })
 
     lobby.players.set(player.id, player)
@@ -174,7 +183,7 @@ export class LobbyService {
     return toLobbySnapshot(lobby)
   }
 
-  public startGame(lobbyId: string, requesterId: string): LobbySnapshot {
+  public async startGame(lobbyId: string, requesterId: string): Promise<LobbySnapshot> {
     const lobby = this.requireLobby(lobbyId)
     const requester = lobby.players.get(requesterId)
 
@@ -191,7 +200,23 @@ export class LobbyService {
       throw new ServerError('GAME_ALREADY_STARTED', 'Game has already started in this lobby.')
     }
 
+    try {
+      await this.stakeService.ensureMatchPool(lobby.id)
+    } catch (error) {
+      throw new ServerError('STAKE_CONFIG_ERROR', `Unable to prepare stake pool: ${String(error)}`)
+    }
+
+    const stakeCheck = await this.stakeService.verifyLobbyStake(lobby)
+    if (!stakeCheck.verified) {
+      throw new ServerError('STAKE_NOT_VERIFIED', stakeCheck.reason)
+    }
+
     this.gameService.startGame(lobby)
+    lobby.payout = {
+      status: 'idle',
+      txHash: null,
+      detail: null,
+    }
     return toLobbySnapshot(lobby)
   }
 
@@ -276,6 +301,29 @@ export class LobbyService {
   public hasLobby(lobbyId: string): boolean {
     const normalized = lobbyId.trim().toUpperCase()
     return this.lobbies.has(normalized)
+  }
+
+  public async finalizePayout(lobbyId: string, winner: 'CREWMATES' | 'IMPOSTER'): Promise<PayoutResult> {
+    const lobby = this.requireLobby(lobbyId)
+
+    if (lobby.payout.status === 'processing' || lobby.payout.status === 'confirmed') {
+      return {
+        status: lobby.payout.status === 'confirmed' ? 'confirmed' : 'submitted',
+        txHash: lobby.payout.txHash ?? undefined,
+        detail: lobby.payout.detail ?? 'payout already in progress or completed',
+      }
+    }
+
+    lobby.payout.status = 'processing'
+    lobby.updatedAt = Date.now()
+
+    const result = await this.stakeService.finalizeMatch(lobby, winner)
+    lobby.payout.status = result.status === 'confirmed' ? 'confirmed' : result.status === 'failed' ? 'failed' : 'idle'
+    lobby.payout.txHash = result.txHash ?? null
+    lobby.payout.detail = result.detail
+    lobby.updatedAt = Date.now()
+
+    return result
   }
 
   private requireLobby(lobbyId: string): LobbyState {
