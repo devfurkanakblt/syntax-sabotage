@@ -145,9 +145,25 @@ export function useLobbySocketSync(lobbyId: string) {
       state.addEvent(`${player?.name ?? payload.playerId} was eliminated.`, 'danger')
     }
 
-    const onGameEnded = (payload: { lobbyId: string; winner: 'CREWMATES' | 'IMPOSTER'; reason: string }) => {
+    const onGameEnded = (payload: {
+      lobbyId: string
+      winner: 'CREWMATES' | 'IMPOSTER'
+      reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests'
+    }) => {
       if (normalizeLobbyId(payload.lobbyId) !== normalizedLobbyId) return
-      useGameStore.getState().addEvent(`GAME ENDED: ${payload.winner} (${payload.reason})`, 'danger')
+
+      let summary = `GAME ENDED: ${payload.winner}`
+      if (payload.winner === 'CREWMATES' && payload.reason === 'code_fixed_in_time') {
+        summary = 'CREWMATES WIN: code fixed in time -> debugger soulbound NFT minted'
+      } else if (payload.winner === 'CREWMATES' && payload.reason === 'imposter_found_in_time') {
+        summary = 'CREWMATES WIN: imposter found in time -> de-impostorer soulbound NFT minted'
+      } else if (payload.reason === 'all_crewmates_eliminated') {
+        summary = 'IMPOSTER WIN: all crewmates eliminated'
+      } else if (payload.reason === 'timeout_failed_tests') {
+        summary = 'IMPOSTER WIN: timer expired and hidden tests failed'
+      }
+
+      useGameStore.getState().addEvent(summary, payload.winner === 'CREWMATES' ? 'success' : 'danger')
     }
 
     const onPayout = (payload: { lobbyId: string; status: string; txHash?: string; detail: string }) => {

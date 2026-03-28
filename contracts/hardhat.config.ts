@@ -16,12 +16,13 @@ const deployerAccounts = /^0x[a-fA-F0-9]{64}$/.test(deployerPrivateKey) ? [deplo
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: '0.8.24',
+    version: '0.8.26',
     settings: {
       optimizer: {
         enabled: true,
         runs: 200,
       },
+      evmVersion: 'cancun',
     },
   },
   networks: {

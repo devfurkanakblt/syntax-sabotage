@@ -321,7 +321,11 @@ export class LobbyService {
     return this.lobbies.has(normalized)
   }
 
-  public async finalizePayout(lobbyId: string, winner: 'CREWMATES' | 'IMPOSTER'): Promise<PayoutResult> {
+  public async finalizePayout(
+    lobbyId: string,
+    winner: 'CREWMATES' | 'IMPOSTER',
+    reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests',
+  ): Promise<PayoutResult> {
     const lobby = this.requireLobby(lobbyId)
 
     if (lobby.payout.status === 'processing' || lobby.payout.status === 'confirmed') {
@@ -335,7 +339,7 @@ export class LobbyService {
     lobby.payout.status = 'processing'
     lobby.updatedAt = Date.now()
 
-    const result = await this.stakeService.finalizeMatch(lobby, winner)
+    const result = await this.stakeService.finalizeMatch(lobby, winner, reason)
     lobby.payout.status = result.status === 'confirmed' ? 'confirmed' : result.status === 'failed' ? 'failed' : 'idle'
     lobby.payout.txHash = result.txHash ?? null
     lobby.payout.detail = result.detail

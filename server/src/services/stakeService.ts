@@ -81,6 +81,17 @@ const poolAbi = [
     ],
     outputs: [],
   },
+  {
+    type: 'function',
+    name: 'finalizeMatchAndMintCrewBadge',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'matchId', type: 'bytes32' },
+      { name: 'winners', type: 'address[]' },
+      { name: 'badgeType', type: 'uint8' },
+    ],
+    outputs: [],
+  },
 ] as const
 
 export interface StakeVerificationResult {
@@ -233,7 +244,11 @@ export class StakeService {
     await publicClient.waitForTransactionReceipt({ hash })
   }
 
-  public async finalizeMatch(lobby: LobbyState, winner: 'CREWMATES' | 'IMPOSTER'): Promise<PayoutResult> {
+  public async finalizeMatch(
+    lobby: LobbyState,
+    winner: 'CREWMATES' | 'IMPOSTER',
+    reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests',
+  ): Promise<PayoutResult> {
     const winners = [...lobby.players.values()].filter((player) => {
       if (winner === 'CREWMATES') {
         return player.role === 'CREWMATE' && !player.isEliminated
@@ -260,6 +275,20 @@ export class StakeService {
     }
 
     if (STAKING_MODE !== 'onchain') {
+      if (winner === 'CREWMATES' && reason === 'code_fixed_in_time') {
+        return {
+          status: 'mock-settled',
+          detail: `mock settled: debugger soulbound badge would be minted for ${winnerAddresses.length} crewmate(s)`,
+        }
+      }
+
+      if (winner === 'CREWMATES' && reason === 'imposter_found_in_time') {
+        return {
+          status: 'mock-settled',
+          detail: `mock settled: de-impostorer soulbound badge would be minted for ${winnerAddresses.length} crewmate(s)`,
+        }
+      }
+
       return {
         status: 'mock-settled',
         detail: `mock payout computed for ${winnerAddresses.length} winner(s)`,
@@ -284,14 +313,61 @@ export class StakeService {
         account,
       })
 
-      const hash = await walletClient.writeContract({
-        address: poolAddress,
-        abi: poolAbi,
-        functionName: 'finalizeMatch',
-        args: [this.getMatchId(lobby.id), winnerAddresses],
-      })
+      const matchId = this.getMatchId(lobby.id)
+      let hash: Hex
+
+      if (winner === 'CREWMATES' && (reason === 'code_fixed_in_time' || reason === 'imposter_found_in_time')) {
+        const badgeType = reason === 'code_fixed_in_time' ? 0 : 1
+
+        try {
+          hash = await walletClient.writeContract({
+            address: poolAddress,
+            abi: poolAbi,
+            functionName: 'finalizeMatchAndMintCrewBadge',
+            args: [matchId, winnerAddresses, badgeType],
+          })
+        } catch {
+          hash = await walletClient.writeContract({
+            address: poolAddress,
+            abi: poolAbi,
+            functionName: 'finalizeMatch',
+            args: [matchId, winnerAddresses],
+          })
+
+          await publicClient.waitForTransactionReceipt({ hash })
+          return {
+            status: 'confirmed',
+            txHash: hash,
+            detail: 'match finalized on-chain, but badge minting is unavailable on this pool version',
+          }
+        }
+      } else {
+        hash = await walletClient.writeContract({
+          address: poolAddress,
+          abi: poolAbi,
+          functionName: 'finalizeMatch',
+          args: [matchId, winnerAddresses],
+        })
+      }
 
       await publicClient.waitForTransactionReceipt({ hash })
+
+      if (winner === 'CREWMATES' && reason === 'code_fixed_in_time') {
+        return {
+          status: 'confirmed',
+          txHash: hash,
+          detail: 'match finalized and debugger soulbound NFT minted to crewmates',
+        }
+      }
+
+      if (winner === 'CREWMATES' && reason === 'imposter_found_in_time') {
+        return {
+          status: 'confirmed',
+          txHash: hash,
+          detail: 'match finalized and de-impostorer soulbound NFT minted to crewmates',
+        }
+      }
+
       return {
         status: 'confirmed',
         txHash: hash,

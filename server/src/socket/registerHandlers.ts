@@ -94,7 +94,7 @@ function startLobbyTicker(io: TypedServer, lobbyService: LobbyService, lobbyId: 
           reason: tick.ended.reason,
         })
 
-        void lobbyService.finalizePayout(lobbyId, tick.ended.winner)
+        void lobbyService.finalizePayout(lobbyId, tick.ended.winner, tick.ended.reason)
           .then((payout) => {
             io.to(lobbyId).emit('game:payoutStatus', {
               lobbyId,

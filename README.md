@@ -106,4 +106,7 @@ Step 4 server env (see `server/.env.example`):
 - Contract deployment and tests in a dedicated Hardhat workspace
 - Backend stake verification gate before game start (`STAKING_ENFORCE=true`)
 - Backend end-game payout finalization with `game:payoutStatus` event broadcast
+- Distinct crewmate endings:
+	- `code_fixed_in_time` -> soulbound `debugger` NFT minted to active crewmates
+	- `imposter_found_in_time` -> soulbound `de-impostorer` NFT minted to active crewmates
 

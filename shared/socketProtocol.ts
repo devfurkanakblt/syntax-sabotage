@@ -112,7 +112,7 @@ export interface PlayerEliminatedPayload {
 export interface GameEndedPayload {
   lobbyId: string
   winner: 'CREWMATES' | 'IMPOSTER'
-  reason: string
+  reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests'
 }
 
 export interface GamePayoutStatusPayload {

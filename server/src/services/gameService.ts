@@ -21,7 +21,7 @@ export interface GameTickOutcome {
   codeAssigned?: { assignments: Record<string, string>; buffers: Record<string, string> }
   voteResolution?: VoteResolution
   playerEliminated?: { playerId: string }
-  ended?: { winner: 'CREWMATES' | 'IMPOSTER'; reason: string }
+  ended?: { winner: 'CREWMATES' | 'IMPOSTER'; reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests' }
 }
 
 export class GameService {
@@ -90,7 +90,8 @@ export class GameService {
     if (lobby.game.totalTimeLeft <= 0) {
       const result = this.evaluateCrewmateTests(lobby)
       const winner = result.passed ? 'CREWMATES' : 'IMPOSTER'
-      return this.endGame(lobby, winner, `timeout_reached: ${result.summary}`, outcome)
+      const reason = winner === 'CREWMATES' ? 'code_fixed_in_time' : 'timeout_failed_tests'
+      return this.endGame(lobby, winner, reason, outcome)
     }
 
     if (lobby.game.phaseTimeLeft > 0) {
@@ -134,6 +135,10 @@ export class GameService {
           timestamp: Date.now(),
         })
         outcome.playerEliminated = { playerId: eliminated.id }
+
+        if (eliminated.role === 'IMPOSTER') {
+          return this.endGame(lobby, 'CREWMATES', 'imposter_found_in_time', outcome)
+        }
       }
     }
 
@@ -145,7 +150,7 @@ export class GameService {
 
     const testResult = this.evaluateCrewmateTests(lobby)
     if (testResult.passed) {
-      return this.endGame(lobby, 'CREWMATES', `hidden_tests_passed: ${testResult.summary}`, outcome)
+      return this.endGame(lobby, 'CREWMATES', 'code_fixed_in_time', outcome)
     }
 
     lobby.game.roundIndex += 1
@@ -176,7 +181,7 @@ export class GameService {
   private endGame(
     lobby: LobbyState,
     winner: 'CREWMATES' | 'IMPOSTER',
-    reason: string,
+    reason: 'code_fixed_in_time' | 'imposter_found_in_time' | 'all_crewmates_eliminated' | 'timeout_failed_tests',
     outcome: GameTickOutcome,
   ): GameTickOutcome {
     lobby.status = 'ended'
