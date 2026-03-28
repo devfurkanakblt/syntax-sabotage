@@ -98,6 +98,12 @@ export interface VoteResultPayload {
   tally: Record<string, number>
 }
 
+export interface CodeAssignedPayload {
+  lobbyId: string
+  assignments: Record<string, string>
+  buffers?: Record<string, string>
+}
+
 export interface PlayerEliminatedPayload {
   lobbyId: string
   playerId: string
@@ -140,7 +146,7 @@ export interface ServerToClientEvents {
   'game:state': (payload: GameStatePayload) => void
   'game:phaseChanged': (payload: GamePhaseChangedPayload) => void
   'game:timerTick': (payload: { lobbyId: string; phaseTimeLeft: number; totalTimeLeft: number }) => void
-  'game:codeAssigned': (payload: { lobbyId: string; assignments: Record<string, string> }) => void
+  'game:codeAssigned': (payload: CodeAssignedPayload) => void
   'game:voteResult': (payload: VoteResultPayload) => void
   'game:playerEliminated': (payload: PlayerEliminatedPayload) => void
   'game:ended': (payload: GameEndedPayload) => void

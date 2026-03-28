@@ -1,11 +1,27 @@
 'use client'
 
+import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
+import { setReadyState } from '../lib/socketClient'
 
 export default function LobbyPanel() {
   const { lobby, player, toggleReady } = useGameStore()
   const { players, minPlayers } = lobby
-  const canStart = players.length >= minPlayers && player.isHost
+  const [pending, setPending] = useState(false)
+
+  async function handleToggleReady() {
+    const nextReady = !player.isReady
+    toggleReady()
+    setPending(true)
+    try {
+      await setReadyState(lobby.id, nextReady)
+    } catch (error) {
+      toggleReady()
+      useGameStore.getState().addEvent(`ready_toggle_failed: ${String(error)}`, 'danger')
+    } finally {
+      setPending(false)
+    }
+  }
 
   return (
     <div className="border border-border bg-base-light p-4 flex flex-col gap-4">
@@ -56,28 +72,16 @@ export default function LobbyPanel() {
 
       <div className="flex gap-2">
         <button
-          onClick={toggleReady}
+          onClick={handleToggleReady}
+          disabled={pending}
           className={`flex-1 py-2 font-mono text-xs border transition-all ${
             player.isReady
               ? 'border-green/50 text-green bg-green/10 hover:bg-green/20'
               : 'border-border-bright text-text-dim hover:border-green hover:text-green'
           }`}
         >
-          {player.isReady ? '// unready' : '// ready_up()'}
+          {pending ? '// syncing...' : player.isReady ? '// unready' : '// ready_up()'}
         </button>
-
-        {player.isHost && (
-          <button
-            disabled={!canStart}
-            className={`flex-1 py-2 font-mono text-xs border transition-all ${
-              canStart
-                ? 'border-red text-red hover:bg-red/10 cursor-pointer'
-                : 'border-border text-text-muted cursor-not-allowed opacity-40'
-            }`}
-          >
-            {canStart ? 'START_GAME()' : 'WAITING...'}
-          </button>
-        )}
       </div>
     </div>
   )

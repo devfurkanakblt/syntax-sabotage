@@ -2,11 +2,14 @@
 
 import { useGameStore } from '../store/gameStore'
 import dynamic from 'next/dynamic'
+import { useRef } from 'react'
+import { submitCodeBuffer } from '../lib/socketClient'
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
 export default function MonacoCodePanel() {
-  const { game, player, code, setCodeBuffer } = useGameStore()
+  const { lobby, game, player, code, setCodeBuffer, addEvent } = useGameStore()
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isReadOnly = game.phase !== 'CODING' || player.isEliminated
 
@@ -45,7 +48,19 @@ export default function MonacoCodePanel() {
           theme="vs-dark"
           value={code.currentBuffer}
           onChange={(val) => {
-            if (!isReadOnly && val !== undefined) setCodeBuffer(val)
+            if (isReadOnly || val === undefined) return
+
+            setCodeBuffer(val)
+
+            if (submitTimerRef.current) {
+              clearTimeout(submitTimerRef.current)
+            }
+
+            submitTimerRef.current = setTimeout(() => {
+              void submitCodeBuffer(lobby.id, val).catch((error) => {
+                addEvent(`code_submit_failed: ${String(error)}`, 'danger')
+              })
+            }, 350)
           }}
           options={{
             readOnly: isReadOnly,

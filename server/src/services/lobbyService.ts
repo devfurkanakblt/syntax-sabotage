@@ -83,6 +83,7 @@ export class LobbyService {
 
   public joinLobby(payload: LobbyJoinRequest, socketId: string): LobbyJoinResponse {
     const lobby = this.requireLobby(payload.lobbyId)
+    const normalizedWallet = this.playerService.normalizeWalletAddress(payload.walletAddress)
 
     if (payload.playerId) {
       const reconnecting = lobby.players.get(payload.playerId)
@@ -96,6 +97,23 @@ export class LobbyService {
         return {
           lobby: toLobbySnapshot(lobby),
           playerId: reconnecting.id,
+          reconnected: true,
+        }
+      }
+    }
+
+    if (normalizedWallet) {
+      const reconnectByWallet = [...lobby.players.values()].find((player) => player.walletAddress === normalizedWallet)
+      if (reconnectByWallet) {
+        this.clearDisconnectTimer(lobby, reconnectByWallet.id)
+        this.playerService.attachSocket(reconnectByWallet, socketId, payload.playerName, payload.walletAddress)
+        lobby.updatedAt = Date.now()
+
+        this.socketSessions.set(socketId, { lobbyId: lobby.id, playerId: reconnectByWallet.id })
+
+        return {
+          lobby: toLobbySnapshot(lobby),
+          playerId: reconnectByWallet.id,
           reconnected: true,
         }
       }

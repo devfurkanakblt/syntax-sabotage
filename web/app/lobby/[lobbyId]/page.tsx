@@ -1,29 +1,40 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useGameStore } from '../../../store/gameStore'
-import { initMockLobby } from '../../../lib/mockEvents'
 import LobbyPanel from '../../../components/LobbyPanel'
 import PlayerRoster from '../../../components/PlayerRoster'
 import WalletConnectButton from '../../../components/WalletConnectButton'
 import EventFeed from '../../../components/EventFeed'
 import StakeMatchPanel from '../../../components/StakeMatchPanel'
+import ConnectionBadge from '../../../components/ConnectionBadge'
+import { reconnectGameSocket, requestGameStart } from '../../../lib/socketClient'
+import { useLobbySocketSync } from '../../../lib/useLobbySocketSync'
 
 export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
   const { lobbyId } = params
   const router = useRouter()
-  const { lobby, player, setLobbyId } = useGameStore()
+  const { player, connection, setConnectionState } = useGameStore()
+  const [startPending, setStartPending] = useState(false)
 
-  useEffect(() => {
-    if (lobby.id !== lobbyId) {
-      setLobbyId(lobbyId)
-      initMockLobby(lobbyId)
+  useLobbySocketSync(lobbyId)
+
+  function handleRetrySocket() {
+    setConnectionState('connecting')
+    reconnectGameSocket()
+  }
+
+  async function handleStartGame() {
+    setStartPending(true)
+    try {
+      await requestGameStart(lobbyId)
+      router.push(`/game/${lobbyId}`)
+    } catch (err) {
+      useGameStore.getState().addEvent(`start_game_failed: ${String(err)}`, 'danger')
+    } finally {
+      setStartPending(false)
     }
-  }, [lobby.id, lobbyId, setLobbyId])
-
-  function handleStartGame() {
-    router.push(`/game/${lobbyId}`)
   }
 
   return (
@@ -36,7 +47,10 @@ export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
             {`// lobby_${lobbyId.toUpperCase()}`}
           </span>
         </div>
-        <WalletConnectButton />
+        <div className="flex items-center gap-3">
+          <ConnectionBadge status={connection.status} error={connection.error} onRetry={handleRetrySocket} />
+          <WalletConnectButton />
+        </div>
       </header>
 
       <div className="flex-1 grid md:grid-cols-[1fr_280px] gap-0 overflow-hidden">
@@ -63,9 +77,10 @@ export default function LobbyPage({ params }: { params: { lobbyId: string } }) {
 
           <button
             onClick={handleStartGame}
-            className="border border-red text-red font-mono text-sm py-3 hover:bg-red/10 transition-all active:scale-[0.98] w-full md:w-auto md:px-8"
+            disabled={startPending}
+            className="border border-red text-red font-mono text-sm py-3 hover:bg-red/10 transition-all active:scale-[0.98] w-full md:w-auto md:px-8 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            → ENTER_GAME() <span className="text-text-muted text-xs">[demo]</span>
+            {startPending ? 'STARTING...' : '→ ENTER_GAME()'} <span className="text-text-muted text-xs">[live]</span>
           </button>
         </div>
 

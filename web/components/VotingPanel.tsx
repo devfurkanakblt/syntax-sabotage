@@ -1,9 +1,10 @@
 'use client'
 
 import { useGameStore } from '../store/gameStore'
+import { castVoteRequest } from '../lib/socketClient'
 
 export default function VotingPanel() {
-  const { lobby, game, player, voting, castVote } = useGameStore()
+  const { lobby, game, player, voting, markVoted, setVoteState, addEvent } = useGameStore()
   const { players } = lobby
   const { phase } = game
 
@@ -15,6 +16,19 @@ export default function VotingPanel() {
     voteCounts[targetId] = (voteCounts[targetId] ?? 0) + 1
   })
   const mostVotes = Math.max(0, ...Object.values(voteCounts))
+
+  async function handleVote(targetId: string) {
+    if (voting.hasVoted) return
+
+    const previousVotes = { ...voting.votes }
+    markVoted(targetId)
+    try {
+      await castVoteRequest(lobby.id, targetId)
+    } catch (error) {
+      setVoteState(previousVotes)
+      addEvent(`vote_failed: ${String(error)}`, 'danger')
+    }
+  }
 
   return (
     <div className="border border-red bg-red/5 flex flex-col h-full">
@@ -38,7 +52,7 @@ export default function VotingPanel() {
             return (
               <button
                 key={p.id}
-                onClick={() => !voting.hasVoted && castVote(p.id)}
+                onClick={() => void handleVote(p.id)}
                 disabled={voting.hasVoted}
                 className={`
                   border p-3 text-left font-mono text-xs transition-all duration-200

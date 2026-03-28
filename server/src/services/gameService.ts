@@ -18,7 +18,7 @@ export interface VoteResolution {
 export interface GameTickOutcome {
   timerTick: { phaseTimeLeft: number; totalTimeLeft: number }
   phaseChanged?: { phase: Phase; roundIndex: number }
-  codeAssigned?: { assignments: Record<string, string> }
+  codeAssigned?: { assignments: Record<string, string>; buffers: Record<string, string> }
   voteResolution?: VoteResolution
   playerEliminated?: { playerId: string }
   ended?: { winner: 'CREWMATES' | 'IMPOSTER'; reason: string }
@@ -103,8 +103,11 @@ export class GameService {
       case 'CODING':
         return this.transitionPhase(lobby, 'MEETING', MEETING_SECONDS, outcome)
       case 'MEETING': {
-        const assignments = this.shuffleCodeAssignments(lobby)
-        outcome.codeAssigned = { assignments }
+        const shuffled = this.shuffleCodeAssignments(lobby)
+        outcome.codeAssigned = {
+          assignments: shuffled.assignments,
+          buffers: shuffled.buffers,
+        }
         return this.transitionPhase(lobby, 'SHUFFLE', SHUFFLE_SECONDS, outcome)
       }
       case 'SHUFFLE':
@@ -193,7 +196,7 @@ export class GameService {
     return outcome
   }
 
-  private shuffleCodeAssignments(lobby: LobbyState): Record<string, string> {
+  private shuffleCodeAssignments(lobby: LobbyState): { assignments: Record<string, string>; buffers: Record<string, string> } {
     const activePlayers = [...lobby.players.values()].filter((p) => !p.isEliminated)
     const targetIds = activePlayers.map((p) => p.id)
     const sourceIds = [...targetIds]
@@ -208,11 +211,14 @@ export class GameService {
 
     const assignments: Record<string, string> = {}
     const nextCodeByPlayer = { ...lobby.codeByPlayer }
+    const buffers: Record<string, string> = {}
 
     targetIds.forEach((targetId, idx) => {
       const sourceId = sourceIds[idx]
       assignments[targetId] = sourceId
-      nextCodeByPlayer[targetId] = lobby.codeByPlayer[sourceId] ?? this.defaultCodeTemplate(sourceId, lobby.game.roundIndex)
+      const buffer = lobby.codeByPlayer[sourceId] ?? this.defaultCodeTemplate(sourceId, lobby.game.roundIndex)
+      nextCodeByPlayer[targetId] = buffer
+      buffers[targetId] = buffer
     })
 
     lobby.codeByPlayer = nextCodeByPlayer
@@ -222,7 +228,7 @@ export class GameService {
       timestamp: Date.now(),
     })
 
-    return assignments
+    return { assignments, buffers }
   }
 
   private buildVoteResolution(lobby: LobbyState, mode: 'resolve' | null): VoteResolution {

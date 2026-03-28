@@ -64,6 +64,7 @@ function startLobbyTicker(io: TypedServer, lobbyService: LobbyService, lobbyId: 
         io.to(lobbyId).emit('game:codeAssigned', {
           lobbyId,
           assignments: tick.codeAssigned.assignments,
+          buffers: tick.codeAssigned.buffers,
         })
       }
 

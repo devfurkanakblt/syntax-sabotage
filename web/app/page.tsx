@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAccount } from 'wagmi'
 import { useGameStore } from '../store/gameStore'
-import { initMockLobby } from '../lib/mockEvents'
+import { createLobbySession, joinLobbySession } from '../lib/socketClient'
+import { setLobbySession } from '../lib/lobbySession'
 
 function generateLobbyId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -11,30 +13,94 @@ function generateLobbyId() {
 
 export default function LandingPage() {
   const router = useRouter()
-  const { setPlayerName, setLobbyId } = useGameStore()
+  const { address } = useAccount()
+  const {
+    setPlayerName,
+    setPlayerWallet,
+    setLobbyId,
+    setPlayerId,
+    applyLobbySnapshot,
+    applyGameSnapshot,
+  } = useGameStore()
 
   const [createName, setCreateName] = useState('')
   const [joinName, setJoinName] = useState('')
   const [joinCode, setJoinCode] = useState('')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function handleCreate(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    setPending(true)
+    setError(null)
+
     const name = createName.trim() || 'Anon_0x00'
-    const id = generateLobbyId()
-    setPlayerName(name)
-    setLobbyId(id)
-    initMockLobby(id)
-    router.push(`/lobby/${id}`)
+
+    try {
+      const requestedLobbyId = generateLobbyId()
+      const created = await createLobbySession({
+        lobbyId: requestedLobbyId,
+        playerName: name,
+        walletAddress: address?.toLowerCase(),
+      })
+
+      setPlayerName(name)
+      if (address) {
+        setPlayerWallet(address.toLowerCase())
+      }
+      setPlayerId(created.playerId)
+      setLobbyId(created.lobby.id)
+      applyLobbySnapshot(created.lobby)
+      applyGameSnapshot(created.lobby.game)
+      setLobbySession({
+        lobbyId: created.lobby.id,
+        playerId: created.playerId,
+        playerName: name,
+        walletAddress: address?.toLowerCase(),
+      })
+      router.push(`/lobby/${created.lobby.id}`)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setPending(false)
+    }
   }
 
-  function handleJoin(e: React.FormEvent) {
+  async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
+    setPending(true)
+    setError(null)
+
     const name = joinName.trim() || 'Anon_0x00'
-    const id = joinCode.trim().toUpperCase() || generateLobbyId()
-    setPlayerName(name)
-    setLobbyId(id)
-    initMockLobby(id)
-    router.push(`/lobby/${id}`)
+
+    try {
+      const id = joinCode.trim().toUpperCase() || generateLobbyId()
+      const joined = await joinLobbySession({
+        lobbyId: id,
+        playerName: name,
+        walletAddress: address?.toLowerCase(),
+      })
+
+      setPlayerName(name)
+      if (address) {
+        setPlayerWallet(address.toLowerCase())
+      }
+      setPlayerId(joined.playerId)
+      setLobbyId(joined.lobby.id)
+      applyLobbySnapshot(joined.lobby)
+      applyGameSnapshot(joined.lobby.game)
+      setLobbySession({
+        lobbyId: joined.lobby.id,
+        playerId: joined.playerId,
+        playerName: name,
+        walletAddress: address?.toLowerCase(),
+      })
+      router.push(`/lobby/${joined.lobby.id}`)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -99,9 +165,10 @@ export default function LandingPage() {
             </div>
             <button
               type="submit"
+              disabled={pending}
               className="border border-green text-green font-mono text-sm py-2.5 hover:bg-green/10 transition-all active:scale-[0.98]"
             >
-              CREATE_LOBBY()
+              {pending ? 'PENDING...' : 'CREATE_LOBBY()'}
             </button>
           </form>
 
@@ -130,12 +197,19 @@ export default function LandingPage() {
             </div>
             <button
               type="submit"
+              disabled={pending}
               className="border border-amber text-amber font-mono text-sm py-2.5 hover:bg-amber/10 transition-all active:scale-[0.98]"
             >
-              JOIN_LOBBY()
+              {pending ? 'PENDING...' : 'JOIN_LOBBY()'}
             </button>
           </form>
         </div>
+
+        {error && (
+          <div className="mt-4 font-mono text-[11px] text-red border border-red/40 px-3 py-2 max-w-2xl w-full">
+            {error}
+          </div>
+        )}
 
         <div className="mt-12 font-mono text-[10px] text-text-muted text-center">
           {'// built for monad_blitz 2025 - open source - no account required'}

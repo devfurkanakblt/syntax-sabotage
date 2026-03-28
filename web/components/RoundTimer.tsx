@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 
 function fmt(s: number) {
@@ -11,21 +10,8 @@ function fmt(s: number) {
 
 export default function RoundTimer() {
   const { game } = useGameStore()
-  const [phaseLeft, setPhaseLeft] = useState(game.phaseTimeLeft)
-  const [totalLeft, setTotalLeft] = useState(game.totalTimeLeft)
-
-  useEffect(() => {
-    setPhaseLeft(game.phaseTimeLeft)
-  }, [game.phase, game.phaseTimeLeft])
-
-  useEffect(() => {
-    if (game.phase === 'LOBBY' || game.phase === 'END_GAME') return
-    const interval = setInterval(() => {
-      setPhaseLeft((v) => Math.max(0, v - 1))
-      setTotalLeft((v) => Math.max(0, v - 1))
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [game.phase])
+  const phaseLeft = game.phaseTimeLeft
+  const totalLeft = game.totalTimeLeft
 
   const phaseUrgent = phaseLeft <= 30
   const totalUrgent = totalLeft <= 60
